@@ -6,7 +6,7 @@ import { useTranslation } from 'next-i18next'
 
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import Plyr from 'plyr-react'
+import dynamic from 'next/dynamic'
 import { useAsync } from 'react-async-hook'
 import { useClipboard } from 'use-clipboard-copy'
 
@@ -20,6 +20,10 @@ import FourOhFour from '../FourOhFour'
 import Loading from '../Loading'
 import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 
+// 动态加载 plyr-react 组件，禁用 SSR
+const PlyrDynamic = dynamic(() => import('plyr-react'), { ssr: false })
+
+// CSS 样式可以照常引入
 import 'plyr-react/plyr.css'
 
 const VideoPlayer: FC<{
@@ -33,7 +37,7 @@ const VideoPlayer: FC<{
   mpegts: any
 }> = ({ videoName, videoUrl, width, height, thumbnail, subtitle, isFlv, mpegts }) => {
   useEffect(() => {
-    // Really really hacky way to inject subtitles as file blobs into the video element
+    // 注入字幕：请求 subtitle 文件，转换为 blob 后设置到 <track> 标签上
     axios
       .get(subtitle, { responseType: 'blob' })
       .then(resp => {
@@ -46,7 +50,7 @@ const VideoPlayer: FC<{
 
     if (isFlv) {
       const loadFlv = () => {
-        // Really hacky way to get the exposed video element from Plyr
+        // 获取视频元素，并加载 flv
         const video = document.getElementById('plyr')
         const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
         flv.attachMediaElement(video)
@@ -56,7 +60,7 @@ const VideoPlayer: FC<{
     }
   }, [videoUrl, isFlv, mpegts, subtitle])
 
-  // Common plyr configs, including the video source and plyr options
+  // 定义 plyr 播放器的数据源和配置
   const plyrSource = {
     type: 'video',
     title: videoName,
@@ -68,36 +72,27 @@ const VideoPlayer: FC<{
     fullscreen: { iosNative: true },
   }
   if (!isFlv) {
-    // If the video is not in flv format, we can use the native plyr and add sources directly with the video URL
+    // 非 flv 视频时，直接添加视频链接
     plyrSource['sources'] = [{ src: videoUrl }]
   }
-  return <Plyr id="plyr" source={plyrSource as Plyr.SourceInfo} options={plyrOptions} />
+  return <PlyrDynamic id="plyr" source={plyrSource as PlyrDynamic.SourceInfo} options={plyrOptions} />
 }
 
 const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
   const { asPath } = useRouter()
   const hashedToken = getStoredToken(asPath)
   const clipboard = useClipboard()
-
   const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
 
-  // OneDrive generates thumbnails for its video files, we pick the thumbnail with the highest resolution
+  // 生成视频预览所需的 URL
   const thumbnail = `/api/thumbnail/?path=${asPath}&size=large${hashedToken ? `&odpt=${hashedToken}` : ''}`
-
-  // We assume subtitle files are beside the video with the same name, only webvtt '.vtt' files are supported
   const vtt = `${asPath.substring(0, asPath.lastIndexOf('.'))}.vtt`
   const subtitle = `/api/raw/?path=${vtt}${hashedToken ? `&odpt=${hashedToken}` : ''}`
-
-  // We also format the raw video file for the in-browser player as well as all other players
   const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
 
   const isFlv = getExtension(file.name) === 'flv'
-  const {
-    loading,
-    error,
-    result: mpegts,
-  } = useAsync(async () => {
+  const { loading, error, result: mpegts } = useAsync(async () => {
     if (isFlv) {
       return (await import('mpegts.js')).default
     }
@@ -148,7 +143,6 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
             btnText={t('Customise link')}
             btnIcon="pen"
           />
-
           <DownloadButton
             onClickCallback={() => window.open(`iina://weblink?url=${getBaseUrl()}${videoUrl}`)}
             btnText="IINA"
