@@ -23,8 +23,26 @@ import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 // 动态加载 plyr-react 组件，禁用 SSR
 const PlyrDynamic = dynamic(() => import('plyr-react'), { ssr: false })
 
-// 引入 plyr-react 的类型
-import type { SourceInfo, Options } from 'plyr-react'
+// 自定义 Plyr 类型（参考 plyr-react 官方配置）
+interface PlyrSourceInfo {
+  type: string
+  title: string
+  poster: string
+  tracks: Array<{
+    kind: string
+    label: string
+    src: string
+    default: boolean
+  }>
+  sources?: Array<{ src: string }>
+}
+
+interface PlyrOptions {
+  ratio: string
+  fullscreen: {
+    iosNative: boolean
+  }
+}
 
 // 引入 CSS 文件
 import 'plyr-react/plyr.css'
@@ -40,7 +58,7 @@ const VideoPlayer: FC<{
   mpegts: any
 }> = ({ videoName, videoUrl, width, height, thumbnail, subtitle, isFlv, mpegts }) => {
   useEffect(() => {
-    // 请求字幕文件，转换为 blob 后注入到 <track> 标签中
+    // 请求字幕文件，并将其转换为 blob 注入到 <track> 标签中
     axios
       .get(subtitle, { responseType: 'blob' })
       .then(resp => {
@@ -53,7 +71,7 @@ const VideoPlayer: FC<{
 
     if (isFlv) {
       const loadFlv = () => {
-        // 获取视频元素，加载 flv 播放器
+        // 获取视频元素，并使用 mpegts 加载 flv 播放器
         const video = document.getElementById('plyr')
         const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
         flv.attachMediaElement(video)
@@ -64,19 +82,19 @@ const VideoPlayer: FC<{
   }, [videoUrl, isFlv, mpegts, subtitle])
 
   // 定义 plyr 播放器的数据源
-  const plyrSource: SourceInfo = {
+  const plyrSource: PlyrSourceInfo = {
     type: 'video',
     title: videoName,
     poster: thumbnail,
     tracks: [{ kind: 'captions', label: videoName, src: '', default: true }],
   }
-  // 定义 plyr 配置选项
-  const plyrOptions: Options = {
+  // 定义 plyr 的配置选项
+  const plyrOptions: PlyrOptions = {
     ratio: `${width ?? 16}:${height ?? 9}`,
     fullscreen: { iosNative: true },
   }
   if (!isFlv) {
-    // 非 flv 视频时，添加视频链接
+    // 非 flv 格式时，添加视频源链接
     plyrSource.sources = [{ src: videoUrl }]
   }
   return <PlyrDynamic id="plyr" source={plyrSource} options={plyrOptions} />
