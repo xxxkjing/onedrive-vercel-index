@@ -1,147 +1,170 @@
-// src/components/previews/VideoPreview.tsx
-import type { OdFileObject } from '../../types'
-import { FC, useEffect, useState, useRef } from 'react'
+import { FC, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useTranslation } from 'next-i18next'
+
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import dynamic from 'next/dynamic'
 import { useAsync } from 'react-async-hook'
 import { useClipboard } from 'use-clipboard-copy'
+
 import { getBaseUrl } from '../../utils/getBaseUrl'
 import { getExtension } from '../../utils/getFileIcon'
 import { getStoredToken } from '../../utils/protectedRouteHandler'
+
 import { DownloadButton } from '../DownloadBtnGtoup'
 import { DownloadBtnContainer, PreviewContainer } from './Containers'
 import FourOhFour from '../FourOhFour'
 import Loading from '../Loading'
 import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 
-// 修复动态导入（v5.1.2 正确导出方式）
-const Plyr = dynamic(() => import('plyr-react').then(mod => mod.default), {
-  ssr: false
-})
+// 动态导入 Plyr，禁用服务器端渲染
+const Plyr = dynamic(() => import('plyr-react'), { ssr: false })
 
-// 新增类型声明
-import type { APITypes, PlyrProps } from 'plyr-react'
-import type PlyrInstance from 'plyr'
-
-interface CustomSource extends PlyrProps['source'] {
-  poster?: string
-  tracks?: Array<{
-    kind: 'captions' | 'subtitles'
-    label: string
-    src: string
-    default?: boolean
-  }>
-}
-
-const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
-  // 保持原有 state 和 hooks 不变
-  const { asPath } = useRouter()
-  const { t } = useTranslation()
-  const clipboard = useClipboard()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const playerRef = useRef<APITypes>(null)
-
-  // 保持原有 URL 生成逻辑不变
-  const hashedToken = getStoredToken(asPath)
-  const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
-  const isFlv = getExtension(file.name) === 'flv'
-
-  // 保持原有 FLV 处理逻辑不变
-  const { result: mpegts } = useAsync(async () => {
-    return isFlv ? (await import('mpegts.js')).default : null
-  }, [isFlv])
-
-  // 保持原有 useEffect 逻辑不变
+const VideoPlayer: FC<{
+  videoName: string
+  videoUrl: string
+  width?: number
+  height?: number
+  thumbnail: string
+  subtitle: string
+  isFlv: boolean
+  mpegts: any
+}> = ({ videoName, videoUrl, width, height, thumbnail, subtitle, isFlv, mpegts }) => {
   useEffect(() => {
-    axios.get(`${videoUrl}&subtitle=${encodeURIComponent(file.name)}`, { responseType: 'blob' })
+    // 在客户端加载字幕文件
+    axios
+      .get(subtitle, { responseType: 'blob' })
       .then(resp => {
         const track = document.querySelector('track')
         track?.setAttribute('src', URL.createObjectURL(resp.data))
       })
-      .catch(() => console.log('Subtitle load failed'))
+      .catch(() => {
+        console.log('无法加载字幕文件。')
+      })
 
-    if (isFlv && mpegts) {
-      const video = document.getElementById('plyr-player')
-      if (video) {
-        const player = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
-        player.attachMediaElement(video)
-        player.load()
+    if (isFlv) {
+      const loadFlv = () => {
+        // 获取 Plyr 暴露的视频元素
+        const video = document.getElementById('plyr')
+        const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
+        flv.attachMediaElement(video)
+        flv.load()
       }
+      loadFlv()
     }
-  }, [videoUrl, isFlv, mpegts, file.name])
+  }, [videoUrl, isFlv, mpegts, subtitle])
 
-  // 更新类型定义（保持配置内容不变）
-  const plyrSource: CustomSource = {
+  // Plyr 配置，包括视频源和选项
+  const plyrSource = {
     type: 'video',
-    sources: [{
-      src: videoUrl,
-      type: `video/${getExtension(file.name)}`
-    }],
-    poster: `/api/thumbnail/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`,
-    tracks: [{
-      kind: 'subtitles',
-      label: file.name,
-      src: '',
-      default: true
-    }]
+    title: videoName,
+    poster: thumbnail,
+    tracks: [{ kind: 'captions', label: videoName, src: '', default: true }],
   }
-
-  const plyrOptions: PlyrInstance.Options = {
-    ratio: '16:9',
+  const plyrOptions: Plyr.Options = {
+    ratio: `${width ?? 16}:${height ?? 9}`,
     fullscreen: { iosNative: true },
-    controls: [
-      'play-large',
-      'play',
-      'progress',
-      'current-time',
-      'mute',
-      'volume',
-      'captions',
-      'settings',
-      'fullscreen'
-    ]
   }
-
-  return (
-    <PreviewContainer>
-      {isFlv && !mpegts ? (
-        <Loading loadingText={t('Loading FLV support...')} />
-      ) : (
-        <>
-          {/* 更新组件引用方式 */}
-          <Plyr
-            id="plyr-player"
-            ref={playerRef}
-            source={plyrSource}
-            options={plyrOptions}
-          />
-
-          {/* 保持原有下载按钮逻辑不变 */}
-          <DownloadBtnContainer>
-            <div className="flex flex-wrap justify-center gap-2">
-              <DownloadButton
-                onClickCallback={() => window.open(videoUrl)}
-                btnColor="blue"
-                btnText={t('Download')}
-                btnIcon="file-download"
-              />
-              {/* 其他按钮保持不变... */}
-            </div>
-          </DownloadBtnContainer>
-
-          <CustomEmbedLinkMenu
-            open={menuOpen}
-            onClose={() => setMenuOpen(false)}
-            path={asPath}
-            hashedToken={hashedToken}
-          />
-        </>
-      )}
-    </PreviewContainer>
-  )
+  if (!isFlv) {
+    // 如果视频不是 flv 格式，直接使用 Plyr 的原生支持
+    plyrSource['sources'] = [{ src: videoUrl }]
+  }
+  return <Plyr id="plyr" source={plyrSource as Plyr.SourceInfo} options={plyrOptions} />
 }
 
-export default VideoPreview
+const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
+  const { asPath } = useRouter()
+  const hashedToken = getStoredToken(asPath)
+  const clipboard = useClipboard()
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { t } = useTranslation()
+
+  // 获取视频缩略图
+  const thumbnail = `/api/thumbnail/?path=${asPath}&size=large${hashedToken ? `&odpt=${hashedToken}` : ''}`
+
+  // 获取字幕文件路径，假设字幕文件与视频文件同名，且扩展名为 '.vtt'
+  const vtt = `${asPath.substring(0, asPath.lastIndexOf('.'))}.vtt`
+  const subtitle = `/api/raw/?path=${vtt}${hashedToken ? `&odpt=${hashedToken}` : ''}`
+
+  // 获取视频文件的原始视频链接
+  const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
+
+  const isFlv = getExtension(file.name) === 'flv'
+  const {
+    loading,
+    error,
+    result: mpegts,
+  } = useAsync(async () => {
+    if (isFlv) {
+      return (await import('mpegts.js')).default
+    }
+  }, [isFlv])
+
+  return (
+    <>
+      <CustomEmbedLinkMenu path={asPath} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+      <PreviewContainer>
+        {error ? (
+          <FourOhFour errorMsg={error.message} />
+        ) : loading && isFlv ? (
+          <Loading loadingText={t('加载 FLV 扩展...')} />
+        ) : (
+          <VideoPlayer
+            videoName={file.name}
+            videoUrl={videoUrl}
+            width={file.video?.width}
+            height={file.video?.height}
+            thumbnail={thumbnail}
+            subtitle={subtitle}
+            isFlv={isFlv}
+            mpegts={mpegts}
+          />
+        )}
+      </PreviewContainer>
+
+      <DownloadBtnContainer>
+        <div className="flex flex-wrap justify-center gap-2">
+          <DownloadButton
+            onClickCallback={() => window.open(videoUrl)}
+            btnColor="blue"
+            btnText={t('下载')}
+            btnIcon="file-download"
+          />
+          <DownloadButton
+            onClickCallback={() => {
+              clipboard.copy(`${getBaseUrl()}/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`)
+              toast.success(t('已复制直接链接到剪贴板。'))
+            }}
+            btnColor="pink"
+            btnText={t('复制直接链接')}
+            btnIcon="copy"
+          />
+          <DownloadButton
+            onClickCallback={() => setMenuOpen(true)}
+            btnColor="teal"
+            btnText={t('自定义链接')}
+            btnIcon="pen"
+          />
+
+          <DownloadButton
+            onClickCallback={() => window.open(`iina://weblink?url=${getBaseUrl()}${videoUrl}`)}
+            btnText="IINA"
+            btnImage="/players/iina.png"
+          />
+          <DownloadButton
+            onClickCallback={() => window.open(`vlc://${getBaseUrl()}${videoUrl}`)}
+            btnText="VLC"
+            btnImage="/players/vlc.png"
+          />
+          <DownloadButton
+            onClickCallback={() => window.open(`potplayer://${getBaseUrl()}${videoUrl}`)}
+            btnText="PotPlayer"
+            btnImage="/players/potplayer.png"
+          />
+          <DownloadButton
+            onClickCallback={() => window.open(`nplayer-http://${window?.location.hostname ?? ''}${videoUrl}`)}
+            btnText="nPlayer"
+            btnImage="/players/nplayer.png
+::contentReference[oaicite:3]{index=3}
+ 
