@@ -1,3 +1,5 @@
+// src/components/previews/VideoPreview.tsx
+
 import { FC, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useTranslation } from 'next-i18next'
@@ -11,7 +13,7 @@ import { getBaseUrl } from '../../utils/getBaseUrl'
 import { getExtension } from '../../utils/getFileIcon'
 import { getStoredToken } from '../../utils/protectedRouteHandler'
 
-import { DownloadButton } from '../DownloadBtnGtoup'
+import { DownloadButton } from '../DownloadBtnGroup'
 import { DownloadBtnContainer, PreviewContainer } from './Containers'
 import FourOhFour from '../FourOhFour'
 import Loading from '../Loading'
@@ -148,21 +150,6 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
           />
 
           <DownloadButton
-            onClickCallback={() => window.open(`iina://weblink?url=${getBaseUrl()}${videoUrl}`)}
-            btnText="IINA"
-            btnImage="/players/iina.png"
-          />
-          <DownloadButton
-            onClickCallback={() => window.open(`vlc://${getBaseUrl()}${videoUrl}`)}
-            btnText="VLC"
-            btnImage="/players/vlc.png"
-          />
-          <DownloadButton
-            onClickCallback={() => window.open(`potplayer://${getBaseUrl()}${videoUrl}`)}
-            btnText="PotPlayer"
-            btnImage="/players/potplayer.png"
-          />
-          <DownloadButton
             onClickCallback={() => window
-::contentReference[oaicite:5]{index=5}
+::contentReference[oaicite:12]{index=12}
  
