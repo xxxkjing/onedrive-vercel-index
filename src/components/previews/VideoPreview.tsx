@@ -6,7 +6,6 @@ import { useTranslation } from 'next-i18next'
 
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import Plyr from 'plyr-react'
 import dynamic from 'next/dynamic'
 import { useAsync } from 'react-async-hook'
 import { useClipboard } from 'use-clipboard-copy'
@@ -23,6 +22,11 @@ import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 
 import 'plyr-react/plyr.css'
 
+// 注意：通过动态导入 plyr-react，在服务端（SSR）不会加载该库，避免了模块顶层直接访问 document 时报错
+const PlyrNoSSR = dynamic(() =>
+  import('plyr-react').then((mod) => mod.default), { ssr: false }
+)
+
 const VideoPlayer: FC<{
   videoName: string
   videoUrl: string
@@ -34,68 +38,70 @@ const VideoPlayer: FC<{
   mpegts: any
 }> = ({ videoName, videoUrl, width, height, thumbnail, subtitle, isFlv, mpegts }) => {
   useEffect(() => {
+    // 只有在浏览器环境下执行以下代码
     if (typeof window !== 'undefined' && document) {
-      // 注入字幕到视频元素
+      // 注入字幕文件：这里获取 VTT 字幕文件并设置到 <track> 元素
       axios
         .get(subtitle, { responseType: 'blob' })
         .then(resp => {
           const track = document.querySelector('track')
-          track?.setAttribute('src', URL.createObjectURL(resp.data))
+          if (track) {
+            track.setAttribute('src', URL.createObjectURL(resp.data))
+          }
         })
         .catch(() => {
-          console.log('Could not load subtitle.')
+          console.log('无法加载字幕文件。')
         })
 
+      // 针对 FLV 格式视频，使用 mpegts.js 进行播放
       if (isFlv) {
         const loadFlv = () => {
           const video = document.getElementById('plyr') as HTMLVideoElement
-          const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
-          flv.attachMediaElement(video)
-          flv.load()
+          if (video) {
+            const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
+            flv.attachMediaElement(video)
+            flv.load()
+          }
         }
         loadFlv()
       }
     }
   }, [videoUrl, isFlv, mpegts, subtitle])
 
-  const plyrSource = {
+  // 构造 Plyr 播放器使用的数据源配置
+  const plyrSource: any = {
     type: 'video',
     title: videoName,
     poster: thumbnail,
-    tracks: [{ kind: 'captions', label: videoName, src: '', default: true }],
+    tracks: [{ kind: 'captions', label: videoName, src: '', default: true }]
   }
   const plyrOptions: Plyr.Options = {
     ratio: `${width ?? 16}:${height ?? 9}`,
-    fullscreen: { iosNative: true },
+    fullscreen: { iosNative: true }
   }
   if (!isFlv) {
     plyrSource['sources'] = [{ src: videoUrl }]
   }
-  return <Plyr id="plyr" source={plyrSource as Plyr.SourceInfo} options={plyrOptions} />
+  return <PlyrNoSSR id="plyr" source={plyrSource} options={plyrOptions} />
 }
-
-// 动态导入，确保仅在浏览器端渲染
-const DynamicVideoPlayer = dynamic(() => Promise.resolve(VideoPlayer), { ssr: false })
 
 const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
   const { asPath } = useRouter()
   const hashedToken = getStoredToken(asPath)
   const clipboard = useClipboard()
-
   const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
 
+  // OneDrive 为视频文件生成缩略图，此处取分辨率最高的缩略图
   const thumbnail = `/api/thumbnail/?path=${asPath}&size=large${hashedToken ? `&odpt=${hashedToken}` : ''}`
+  // 假设视频文件旁边会有对应同名的 WebVTT 字幕文件（.vtt 格式）
   const vtt = `${asPath.substring(0, asPath.lastIndexOf('.'))}.vtt`
   const subtitle = `/api/raw/?path=${vtt}${hashedToken ? `&odpt=${hashedToken}` : ''}`
+  // 构造视频文件的访问 URL
   const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
 
   const isFlv = getExtension(file.name) === 'flv'
-  const {
-    loading,
-    error,
-    result: mpegts,
-  } = useAsync(async () => {
+  const { loading, error, result: mpegts } = useAsync(async () => {
     if (isFlv) {
       return (await import('mpegts.js')).default
     }
@@ -110,7 +116,7 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
         ) : loading && isFlv ? (
           <Loading loadingText={t('Loading FLV extension...')} />
         ) : (
-          <DynamicVideoPlayer
+          <VideoPlayer
             videoName={file.name}
             videoUrl={videoUrl}
             width={file.video?.width}
